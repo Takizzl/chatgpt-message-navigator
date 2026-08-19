@@ -5,7 +5,7 @@
   const API_KEY = "__chatgptMessageNavigator";
   const ROOT_ID = "chatgpt-message-navigator";
   const STYLE_ID = "chatgpt-message-navigator-style";
-  const VERSION = "1.1.0";
+  const VERSION = "1.1.1";
 
   if (window[API_KEY]?.destroy) window[API_KEY].destroy();
 
@@ -15,6 +15,9 @@
   let panel = null;
   let panelList = null;
   let panelCount = null;
+  let panelScrollbar = null;
+  let panelThumb = null;
+  let lastWheelStepAt = 0;
   let scrollContainer = null;
   let messageTargets = [];
   let activeIndex = -1;
@@ -158,17 +161,40 @@
       overflow-y: auto;
       overscroll-behavior: contain;
       padding: 7px;
-      scrollbar-gutter: stable;
-      scrollbar-width: thin;
-      scrollbar-color: color-mix(in srgb, currentColor 27%, transparent) transparent;
+      scrollbar-width: none;
     }
-    #${ROOT_ID} .cgpt-nav-panel-list::-webkit-scrollbar { width: 10px; }
-    #${ROOT_ID} .cgpt-nav-panel-list::-webkit-scrollbar-track { background: transparent; }
-    #${ROOT_ID} .cgpt-nav-panel-list::-webkit-scrollbar-thumb {
-      border: 3px solid transparent;
+    #${ROOT_ID} .cgpt-nav-panel-list::-webkit-scrollbar { display: none; }
+    #${ROOT_ID} .cgpt-nav-panel-body {
+      display: grid;
+      min-height: 0;
+      grid-template-columns: minmax(0, 1fr) 16px;
+    }
+    #${ROOT_ID} .cgpt-nav-scrollbar {
+      position: relative;
+      min-height: 48px;
+      margin: 8px 4px 8px 0;
       border-radius: 999px;
-      background: color-mix(in srgb, currentColor 28%, transparent);
-      background-clip: padding-box;
+      background: color-mix(in srgb, currentColor 8%, transparent);
+      cursor: pointer;
+      touch-action: none;
+    }
+    #${ROOT_ID} .cgpt-nav-scrollbar-thumb {
+      position: absolute;
+      top: 0;
+      left: 3px;
+      width: 7px;
+      min-height: 28px;
+      border-radius: 999px;
+      background: color-mix(in srgb, currentColor 34%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 7%, transparent);
+      cursor: grab;
+      transition: background-color 100ms ease;
+    }
+    #${ROOT_ID} .cgpt-nav-scrollbar:hover .cgpt-nav-scrollbar-thumb,
+    #${ROOT_ID} .cgpt-nav-scrollbar-thumb:active {
+      background: color-mix(in srgb, currentColor 55%, transparent);
+    }
+    #${ROOT_ID} .cgpt-nav-scrollbar-thumb:active { cursor: grabbing; }
     }
     #${ROOT_ID} .cgpt-nav-panel-item {
       display: grid;
@@ -248,20 +274,30 @@
     panelCount = document.createElement("span");
     const panelHint = document.createElement("span");
     panelHint.className = "cgpt-nav-panel-hint";
-    panelHint.textContent = "滚轮或拖动滚动条";
+    panelHint.textContent = "滚轮 / 拖动右侧滑块";
     panelHeader.append(panelCount, panelHint);
 
     panelList = document.createElement("div");
     panelList.className = "cgpt-nav-panel-list";
     panelList.setAttribute("role", "list");
-    panelList.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
-    list.addEventListener("wheel", (event) => {
-      if (panelList.scrollHeight <= panelList.clientHeight) return;
-      event.preventDefault();
-      panelList.scrollTop += event.deltaY;
-    }, { passive: false });
+    panelList.addEventListener("scroll", syncPanelScrollbar, { passive: true });
+    panelList.addEventListener("wheel", handleNavigationWheel, { passive: false });
+    list.addEventListener("wheel", handleNavigationWheel, { passive: false });
 
-    panel.append(panelHeader, panelList);
+    const panelBody = document.createElement("div");
+    panelBody.className = "cgpt-nav-panel-body";
+    panelScrollbar = document.createElement("div");
+    panelScrollbar.className = "cgpt-nav-scrollbar";
+    panelScrollbar.setAttribute("role", "scrollbar");
+    panelScrollbar.setAttribute("aria-label", "历史提问位置");
+    panelScrollbar.setAttribute("aria-orientation", "vertical");
+    panelThumb = document.createElement("div");
+    panelThumb.className = "cgpt-nav-scrollbar-thumb";
+    panelScrollbar.appendChild(panelThumb);
+    panelScrollbar.addEventListener("pointerdown", startScrollbarDrag);
+    panelBody.append(panelList, panelScrollbar);
+
+    panel.append(panelHeader, panelBody);
 
     root.append(list, tooltip, panel);
     document.body.appendChild(root);
@@ -319,15 +355,127 @@
     if (tooltip) tooltip.dataset.open = "false";
   }
 
+  function handleNavigationWheel(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const maxScroll = Math.max(0, panelList.scrollHeight - panelList.clientHeight);
+    if (maxScroll > 1) {
+      panelList.scrollTop += event.deltaY;
+      syncPanelScrollbar();
+      return;
+    }
+
+    const now = performance.now();
+    if (now - lastWheelStepAt < 130 || Math.abs(event.deltaY) < 2) return;
+    lastWheelStepAt = now;
+    const direction = event.deltaY > 0 ? 1 : -1;
+    jumpTo(Math.max(0, Math.min(messageTargets.length - 1, activeIndex + direction)));
+  }
+
+  function setScrollbarPosition(clientY, grabOffset) {
+    if (!panelScrollbar || !panelThumb || !messageTargets.length) return;
+    const trackRect = panelScrollbar.getBoundingClientRect();
+    const thumbHeight = panelThumb.offsetHeight;
+    const travel = Math.max(1, trackRect.height - thumbHeight);
+    const ratio = Math.max(0, Math.min(1,
+      (clientY - trackRect.top - grabOffset) / travel
+    ));
+    const maxScroll = Math.max(0, panelList.scrollHeight - panelList.clientHeight);
+    if (maxScroll > 1) {
+      panelList.scrollTop = ratio * maxScroll;
+    } else {
+      jumpTo(Math.round(ratio * Math.max(0, messageTargets.length - 1)));
+    }
+    syncPanelScrollbar();
+  }
+
+  function startScrollbarDrag(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const thumbRect = panelThumb.getBoundingClientRect();
+    const grabOffset = event.target === panelThumb
+      ? Math.max(0, Math.min(thumbRect.height, event.clientY - thumbRect.top))
+      : thumbRect.height / 2;
+    setScrollbarPosition(event.clientY, grabOffset);
+
+    const move = (moveEvent) => {
+      moveEvent.preventDefault();
+      setScrollbarPosition(moveEvent.clientY, grabOffset);
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
+  }
+
+  function syncPanelScrollbar() {
+    if (!panelScrollbar || !panelThumb || !panelList) return;
+    const trackHeight = panelScrollbar.clientHeight;
+    if (!trackHeight) return;
+    const maxScroll = Math.max(0, panelList.scrollHeight - panelList.clientHeight);
+    const hasOverflow = maxScroll > 1;
+    const thumbHeight = hasOverflow
+      ? Math.max(28, trackHeight * panelList.clientHeight / panelList.scrollHeight)
+      : Math.max(28, Math.min(48, trackHeight * 0.28));
+    const travel = Math.max(0, trackHeight - thumbHeight);
+    const ratio = hasOverflow
+      ? panelList.scrollTop / maxScroll
+      : activeIndex / Math.max(1, messageTargets.length - 1);
+    panelThumb.style.height = `${thumbHeight}px`;
+    panelThumb.style.transform = `translateY(${Math.max(0, Math.min(travel, ratio * travel))}px)`;
+    panelScrollbar.setAttribute("aria-valuemin", "1");
+    panelScrollbar.setAttribute("aria-valuemax", String(Math.max(1, messageTargets.length)));
+    panelScrollbar.setAttribute("aria-valuenow", String(Math.max(1, activeIndex + 1)));
+  }
+
+  function setActiveVisual(next) {
+    activeIndex = next;
+    [...list.children].forEach((button, index) => {
+      button.dataset.active = String(index === next);
+      if (index === next) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
+    });
+    [...panelList.children].forEach((button, index) => {
+      button.dataset.active = String(index === next);
+      if (index === next) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
+    });
+
+    const activeButton = list.children[next];
+    if (activeButton) {
+      const top = activeButton.offsetTop;
+      const bottom = top + activeButton.offsetHeight;
+      if (top < list.scrollTop) list.scrollTop = Math.max(0, top - 8);
+      else if (bottom > list.scrollTop + list.clientHeight) {
+        list.scrollTop = bottom - list.clientHeight + 8;
+      }
+    }
+    const activePanelButton = panelList.children[next];
+    if (activePanelButton) {
+      const top = activePanelButton.offsetTop;
+      const bottom = top + activePanelButton.offsetHeight;
+      if (top < panelList.scrollTop) panelList.scrollTop = Math.max(0, top - 7);
+      else if (bottom > panelList.scrollTop + panelList.clientHeight) {
+        panelList.scrollTop = bottom - panelList.clientHeight + 7;
+      }
+    }
+    syncPanelScrollbar();
+  }
+
   function jumpTo(index) {
     const target = messageTargets[index];
     if (!target?.isConnected) return;
+    setActiveVisual(index);
     target.scrollIntoView({
       behavior: "auto",
       block: "center",
       inline: "nearest",
     });
-    window.setTimeout(() => updateActive(true), 180);
+    window.setTimeout(() => updateActive(true), 420);
   }
 
   function renderItems(nextBubbles) {
@@ -369,6 +517,7 @@
       panelButton.addEventListener("click", () => jumpTo(index));
       panelList.appendChild(panelButton);
     });
+    requestAnimationFrame(syncPanelScrollbar);
   }
 
   function sameMessages(next) {
@@ -403,36 +552,7 @@
       });
 
       if (!force && next === activeIndex) return;
-      activeIndex = next;
-      [...list.children].forEach((button, index) => {
-        button.dataset.active = String(index === next);
-        if (index === next) button.setAttribute("aria-current", "true");
-        else button.removeAttribute("aria-current");
-      });
-      [...panelList.children].forEach((button, index) => {
-        button.dataset.active = String(index === next);
-        if (index === next) button.setAttribute("aria-current", "true");
-        else button.removeAttribute("aria-current");
-      });
-
-      const activeButton = list.children[next];
-      if (activeButton) {
-        const top = activeButton.offsetTop;
-        const bottom = top + activeButton.offsetHeight;
-        if (top < list.scrollTop) list.scrollTop = Math.max(0, top - 8);
-        else if (bottom > list.scrollTop + list.clientHeight) {
-          list.scrollTop = bottom - list.clientHeight + 8;
-        }
-      }
-      const activePanelButton = panelList.children[next];
-      if (activePanelButton) {
-        const top = activePanelButton.offsetTop;
-        const bottom = top + activePanelButton.offsetHeight;
-        if (top < panelList.scrollTop) panelList.scrollTop = Math.max(0, top - 7);
-        else if (bottom > panelList.scrollTop + panelList.clientHeight) {
-          panelList.scrollTop = bottom - panelList.clientHeight + 7;
-        }
-      }
+      setActiveVisual(next);
     });
   }
 
@@ -498,7 +618,7 @@
     window.removeEventListener("resize", positionRoot);
     root?.remove();
     style.remove();
-    root = list = tooltip = panel = panelList = panelCount = null;
+    root = list = tooltip = panel = panelList = panelCount = panelScrollbar = panelThumb = null;
     messageTargets = [];
     delete window[INSTALL_KEY];
     delete window[API_KEY];
