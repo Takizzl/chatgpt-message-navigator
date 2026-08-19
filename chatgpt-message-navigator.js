@@ -5,13 +5,16 @@
   const API_KEY = "__chatgptMessageNavigator";
   const ROOT_ID = "chatgpt-message-navigator";
   const STYLE_ID = "chatgpt-message-navigator-style";
-  const VERSION = "1.0.0";
+  const VERSION = "1.1.0";
 
   if (window[API_KEY]?.destroy) window[API_KEY].destroy();
 
   let root = null;
   let list = null;
   let tooltip = null;
+  let panel = null;
+  let panelList = null;
+  let panelCount = null;
   let scrollContainer = null;
   let messageTargets = [];
   let activeIndex = -1;
@@ -101,6 +104,109 @@
       color: color-mix(in srgb, currentColor 55%, transparent);
       font-size: 11px;
     }
+    #${ROOT_ID}:hover .cgpt-nav-tooltip,
+    #${ROOT_ID}:focus-within .cgpt-nav-tooltip { opacity: 0 !important; }
+    #${ROOT_ID} .cgpt-nav-panel {
+      position: absolute;
+      left: 32px;
+      top: 50%;
+      display: flex;
+      width: min(390px, calc(100vw - 100px));
+      max-height: min(82vh, 860px);
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--color-background-primary, #fff) 96%, transparent);
+      box-shadow: 0 14px 38px rgba(0, 0, 0, .18);
+      color: var(--color-text, #202123);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-50%) translateX(-6px);
+      transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+      pointer-events: auto;
+    }
+    #${ROOT_ID}:hover .cgpt-nav-panel,
+    #${ROOT_ID}:focus-within .cgpt-nav-panel {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(-50%) translateX(0);
+    }
+    #${ROOT_ID} .cgpt-nav-panel-header {
+      display: flex;
+      min-height: 42px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 12px;
+      border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+      color: color-mix(in srgb, currentColor 68%, transparent);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    #${ROOT_ID} .cgpt-nav-panel-hint {
+      font-size: 11px;
+      font-weight: 400;
+      opacity: .72;
+    }
+    #${ROOT_ID} .cgpt-nav-panel-list {
+      display: flex;
+      max-height: calc(min(82vh, 860px) - 43px);
+      flex-direction: column;
+      gap: 2px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 7px;
+      scrollbar-gutter: stable;
+      scrollbar-width: thin;
+      scrollbar-color: color-mix(in srgb, currentColor 27%, transparent) transparent;
+    }
+    #${ROOT_ID} .cgpt-nav-panel-list::-webkit-scrollbar { width: 10px; }
+    #${ROOT_ID} .cgpt-nav-panel-list::-webkit-scrollbar-track { background: transparent; }
+    #${ROOT_ID} .cgpt-nav-panel-list::-webkit-scrollbar-thumb {
+      border: 3px solid transparent;
+      border-radius: 999px;
+      background: color-mix(in srgb, currentColor 28%, transparent);
+      background-clip: padding-box;
+    }
+    #${ROOT_ID} .cgpt-nav-panel-item {
+      display: grid;
+      width: 100%;
+      min-height: 34px;
+      grid-template-columns: 28px minmax(0, 1fr);
+      align-items: center;
+      gap: 4px;
+      padding: 5px 9px 5px 5px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+    }
+    #${ROOT_ID} .cgpt-nav-panel-item:hover,
+    #${ROOT_ID} .cgpt-nav-panel-item:focus-visible {
+      background: color-mix(in srgb, currentColor 8%, transparent);
+      outline: none;
+    }
+    #${ROOT_ID} .cgpt-nav-panel-item[data-active="true"] {
+      background: color-mix(in srgb, currentColor 10%, transparent);
+    }
+    #${ROOT_ID} .cgpt-nav-panel-index {
+      color: color-mix(in srgb, currentColor 46%, transparent);
+      font-size: 10px;
+      text-align: right;
+    }
+    #${ROOT_ID} .cgpt-nav-panel-text {
+      min-width: 0;
+      overflow: hidden;
+      font-size: 12px;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     @media (prefers-reduced-motion: reduce) {
       #${ROOT_ID} *, #${ROOT_ID} *::before, #${ROOT_ID} *::after { transition: none !important; }
     }
@@ -133,7 +239,31 @@
     tooltip.className = "cgpt-nav-tooltip";
     tooltip.setAttribute("role", "tooltip");
 
-    root.append(list, tooltip);
+    panel = document.createElement("section");
+    panel.className = "cgpt-nav-panel";
+    panel.setAttribute("aria-label", "全部历史提问");
+
+    const panelHeader = document.createElement("div");
+    panelHeader.className = "cgpt-nav-panel-header";
+    panelCount = document.createElement("span");
+    const panelHint = document.createElement("span");
+    panelHint.className = "cgpt-nav-panel-hint";
+    panelHint.textContent = "滚轮或拖动滚动条";
+    panelHeader.append(panelCount, panelHint);
+
+    panelList = document.createElement("div");
+    panelList.className = "cgpt-nav-panel-list";
+    panelList.setAttribute("role", "list");
+    panelList.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
+    list.addEventListener("wheel", (event) => {
+      if (panelList.scrollHeight <= panelList.clientHeight) return;
+      event.preventDefault();
+      panelList.scrollTop += event.deltaY;
+    }, { passive: false });
+
+    panel.append(panelHeader, panelList);
+
+    root.append(list, tooltip, panel);
     document.body.appendChild(root);
   }
 
@@ -204,6 +334,8 @@
     messageTargets = nextBubbles;
     activeIndex = -1;
     list.replaceChildren();
+    panelList.replaceChildren();
+    panelCount.textContent = `全部提问 · ${nextBubbles.length}`;
 
     nextBubbles.forEach((bubble, index) => {
       const text = messageText(bubble);
@@ -220,6 +352,22 @@
       button.addEventListener("mouseleave", hideTooltip);
       button.addEventListener("blur", hideTooltip);
       list.appendChild(button);
+
+      const panelButton = document.createElement("button");
+      panelButton.type = "button";
+      panelButton.className = "cgpt-nav-panel-item";
+      panelButton.dataset.index = String(index);
+      panelButton.setAttribute("role", "listitem");
+      panelButton.setAttribute("aria-label", `跳转到第 ${index + 1} 条提问：${text}`);
+      const number = document.createElement("span");
+      number.className = "cgpt-nav-panel-index";
+      number.textContent = String(index + 1);
+      const label = document.createElement("span");
+      label.className = "cgpt-nav-panel-text";
+      label.textContent = text;
+      panelButton.append(number, label);
+      panelButton.addEventListener("click", () => jumpTo(index));
+      panelList.appendChild(panelButton);
     });
   }
 
@@ -261,6 +409,11 @@
         if (index === next) button.setAttribute("aria-current", "true");
         else button.removeAttribute("aria-current");
       });
+      [...panelList.children].forEach((button, index) => {
+        button.dataset.active = String(index === next);
+        if (index === next) button.setAttribute("aria-current", "true");
+        else button.removeAttribute("aria-current");
+      });
 
       const activeButton = list.children[next];
       if (activeButton) {
@@ -269,6 +422,15 @@
         if (top < list.scrollTop) list.scrollTop = Math.max(0, top - 8);
         else if (bottom > list.scrollTop + list.clientHeight) {
           list.scrollTop = bottom - list.clientHeight + 8;
+        }
+      }
+      const activePanelButton = panelList.children[next];
+      if (activePanelButton) {
+        const top = activePanelButton.offsetTop;
+        const bottom = top + activePanelButton.offsetHeight;
+        if (top < panelList.scrollTop) panelList.scrollTop = Math.max(0, top - 7);
+        else if (bottom > panelList.scrollTop + panelList.clientHeight) {
+          panelList.scrollTop = bottom - panelList.clientHeight + 7;
         }
       }
     });
@@ -336,7 +498,7 @@
     window.removeEventListener("resize", positionRoot);
     root?.remove();
     style.remove();
-    root = list = tooltip = null;
+    root = list = tooltip = panel = panelList = panelCount = null;
     messageTargets = [];
     delete window[INSTALL_KEY];
     delete window[API_KEY];
