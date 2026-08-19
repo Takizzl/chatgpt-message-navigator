@@ -5,23 +5,20 @@
   const API_KEY = "__chatgptMessageNavigator";
   const ROOT_ID = "chatgpt-message-navigator";
   const STYLE_ID = "chatgpt-message-navigator-style";
-  const VERSION = "1.1.4";
+  const VERSION = "1.1.11";
 
   if (window[API_KEY]?.destroy) window[API_KEY].destroy();
 
   let root = null;
   let list = null;
   let tooltip = null;
-  let panel = null;
-  let panelList = null;
-  let panelCount = null;
-  let panelScrollbar = null;
-  let panelThumb = null;
   let lastWheelStepAt = 0;
+  let tooltipHideTimer = 0;
   let conversationKey = "";
   let scrollContainer = null;
   let messageTargets = [];
   let activeIndex = -1;
+  let selectedIndex = -1;
   let updateTimer = 0;
   let restoreLatestTimer = 0;
   let restoreLatestInterval = 0;
@@ -35,7 +32,7 @@
       position: fixed;
       z-index: 2147483000;
       display: flex;
-      align-items: center;
+      align-items: stretch;
       pointer-events: none;
       color: var(--color-text, #202123);
       font-family: var(--font-sans, "Segoe UI", sans-serif);
@@ -67,7 +64,7 @@
       border: 0;
       border-radius: 999px;
       background: color-mix(in srgb, currentColor 27%, transparent);
-      cursor: pointer;
+      cursor: default;
       outline: none;
       transition: width 120ms ease, background-color 120ms ease, transform 120ms ease;
     }
@@ -83,9 +80,13 @@
       flex-basis: 4px;
       background: color-mix(in srgb, currentColor 78%, transparent);
     }
+    #${ROOT_ID} .cgpt-nav-item[data-selected="true"] {
+      width: 20px;
+      background: color-mix(in srgb, currentColor 72%, transparent);
+    }
     #${ROOT_ID} .cgpt-nav-tooltip {
       position: absolute;
-      left: 33px;
+      left: 46px;
       width: min(330px, calc(100vw - 100px));
       padding: 8px 10px;
       border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
@@ -110,132 +111,6 @@
       margin-bottom: 3px;
       color: color-mix(in srgb, currentColor 55%, transparent);
       font-size: 11px;
-    }
-    #${ROOT_ID}:hover .cgpt-nav-tooltip,
-    #${ROOT_ID}:focus-within .cgpt-nav-tooltip { opacity: 0 !important; }
-    #${ROOT_ID} .cgpt-nav-panel {
-      position: absolute;
-      left: 32px;
-      top: 50%;
-      display: flex;
-      width: min(390px, calc(100vw - 100px));
-      max-height: min(82vh, 860px);
-      flex-direction: column;
-      overflow: hidden;
-      border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-      border-radius: 14px;
-      background: color-mix(in srgb, var(--color-background-primary, #fff) 96%, transparent);
-      box-shadow: 0 14px 38px rgba(0, 0, 0, .18);
-      color: var(--color-text, #202123);
-      opacity: 0;
-      visibility: hidden;
-      transform: translateY(-50%) translateX(-6px);
-      transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
-      pointer-events: auto;
-    }
-    #${ROOT_ID}:hover .cgpt-nav-panel,
-    #${ROOT_ID}:focus-within .cgpt-nav-panel {
-      opacity: 1;
-      visibility: visible;
-      transform: translateY(-50%) translateX(0);
-    }
-    #${ROOT_ID} .cgpt-nav-panel-header {
-      display: flex;
-      min-height: 42px;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 0 12px;
-      border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent);
-      color: color-mix(in srgb, currentColor 68%, transparent);
-      font-size: 12px;
-      font-weight: 600;
-    }
-    #${ROOT_ID} .cgpt-nav-panel-hint {
-      font-size: 11px;
-      font-weight: 400;
-      opacity: .72;
-    }
-    #${ROOT_ID} .cgpt-nav-panel-list {
-      display: flex;
-      max-height: calc(min(82vh, 860px) - 43px);
-      flex-direction: column;
-      gap: 2px;
-      overflow-x: hidden;
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      padding: 7px;
-      scrollbar-width: none;
-    }
-    #${ROOT_ID} .cgpt-nav-panel-list::-webkit-scrollbar { display: none; }
-    #${ROOT_ID} .cgpt-nav-panel-body {
-      display: grid;
-      min-height: 0;
-      grid-template-columns: minmax(0, 1fr) 16px;
-    }
-    #${ROOT_ID} .cgpt-nav-scrollbar {
-      position: relative;
-      min-height: 48px;
-      margin: 8px 4px 8px 0;
-      border-radius: 999px;
-      background: color-mix(in srgb, currentColor 8%, transparent);
-      cursor: pointer;
-      touch-action: none;
-    }
-    #${ROOT_ID} .cgpt-nav-scrollbar-thumb {
-      position: absolute;
-      top: 0;
-      left: 3px;
-      width: 7px;
-      min-height: 28px;
-      border-radius: 999px;
-      background: color-mix(in srgb, currentColor 34%, transparent);
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 7%, transparent);
-      cursor: grab;
-      transition: background-color 100ms ease;
-    }
-    #${ROOT_ID} .cgpt-nav-scrollbar:hover .cgpt-nav-scrollbar-thumb,
-    #${ROOT_ID} .cgpt-nav-scrollbar-thumb:active {
-      background: color-mix(in srgb, currentColor 55%, transparent);
-    }
-    #${ROOT_ID} .cgpt-nav-scrollbar-thumb:active { cursor: grabbing; }
-    }
-    #${ROOT_ID} .cgpt-nav-panel-item {
-      display: grid;
-      width: 100%;
-      min-height: 34px;
-      grid-template-columns: 28px minmax(0, 1fr);
-      align-items: center;
-      gap: 4px;
-      padding: 5px 9px 5px 5px;
-      border: 0;
-      border-radius: 9px;
-      background: transparent;
-      color: inherit;
-      cursor: pointer;
-      font: inherit;
-      text-align: left;
-    }
-    #${ROOT_ID} .cgpt-nav-panel-item:hover,
-    #${ROOT_ID} .cgpt-nav-panel-item:focus-visible {
-      background: color-mix(in srgb, currentColor 8%, transparent);
-      outline: none;
-    }
-    #${ROOT_ID} .cgpt-nav-panel-item[data-active="true"] {
-      background: color-mix(in srgb, currentColor 10%, transparent);
-    }
-    #${ROOT_ID} .cgpt-nav-panel-index {
-      color: color-mix(in srgb, currentColor 46%, transparent);
-      font-size: 10px;
-      text-align: right;
-    }
-    #${ROOT_ID} .cgpt-nav-panel-text {
-      min-width: 0;
-      overflow: hidden;
-      font-size: 12px;
-      line-height: 1.4;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
     @media (prefers-reduced-motion: reduce) {
       #${ROOT_ID} *, #${ROOT_ID} *::before, #${ROOT_ID} *::after { transition: none !important; }
@@ -269,41 +144,9 @@
     tooltip.className = "cgpt-nav-tooltip";
     tooltip.setAttribute("role", "tooltip");
 
-    panel = document.createElement("section");
-    panel.className = "cgpt-nav-panel";
-    panel.setAttribute("aria-label", "全部历史提问");
-
-    const panelHeader = document.createElement("div");
-    panelHeader.className = "cgpt-nav-panel-header";
-    panelCount = document.createElement("span");
-    const panelHint = document.createElement("span");
-    panelHint.className = "cgpt-nav-panel-hint";
-    panelHint.textContent = "滚轮 / 拖动右侧滑块";
-    panelHeader.append(panelCount, panelHint);
-
-    panelList = document.createElement("div");
-    panelList.className = "cgpt-nav-panel-list";
-    panelList.setAttribute("role", "list");
-    panelList.addEventListener("scroll", syncPanelScrollbar, { passive: true });
-    panelList.addEventListener("wheel", handleNavigationWheel, { passive: false });
     list.addEventListener("wheel", handleNavigationWheel, { passive: false });
 
-    const panelBody = document.createElement("div");
-    panelBody.className = "cgpt-nav-panel-body";
-    panelScrollbar = document.createElement("div");
-    panelScrollbar.className = "cgpt-nav-scrollbar";
-    panelScrollbar.setAttribute("role", "scrollbar");
-    panelScrollbar.setAttribute("aria-label", "历史提问位置");
-    panelScrollbar.setAttribute("aria-orientation", "vertical");
-    panelThumb = document.createElement("div");
-    panelThumb.className = "cgpt-nav-scrollbar-thumb";
-    panelScrollbar.appendChild(panelThumb);
-    panelScrollbar.addEventListener("pointerdown", startScrollbarDrag);
-    panelBody.append(panelList, panelScrollbar);
-
-    panel.append(panelHeader, panelBody);
-
-    root.append(list, tooltip, panel);
+    root.append(list, tooltip);
     document.body.appendChild(root);
   }
 
@@ -333,18 +176,64 @@
       }) || null;
   }
 
-  function getUserMessageTargets(conversation) {
+  function getMessageTargets(conversation) {
     const keyedUnits = [...conversation.querySelectorAll("[data-content-search-unit-key]")]
-      .filter((unit) => (unit.getAttribute("data-content-search-unit-key") || "").endsWith(":user"));
-    if (keyedUnits.length) return keyedUnits;
+      .filter((unit) => (unit.getAttribute("data-content-search-unit-key") || "")
+        .endsWith(":user"));
+    const mountedByKey = new Map(keyedUnits.map((unit) => [
+      unit.getAttribute("data-content-search-unit-key"),
+      unit,
+    ]));
+
+    const fiberKey = Object.getOwnPropertyNames(conversation)
+      .find((key) => key.startsWith("__reactFiber$"));
+    let fiber = fiberKey ? conversation[fiberKey] : null;
+    let entries = null;
+    for (let depth = 0; fiber && depth < 30; depth += 1, fiber = fiber.return) {
+      if (Array.isArray(fiber.memoizedProps?.entries)) {
+        entries = fiber.memoizedProps.entries;
+        break;
+      }
+    }
+
+    if (entries?.length) {
+      return entries.flatMap((entry, turnIndex) => {
+        const userItemIndex = (entry.turn?.items || [])
+          .findIndex((item) => item?.type === "user-message");
+        if (userItemIndex < 0) return [];
+        const item = entry.turn.items[userItemIndex];
+        const turnKey = entry.turnKey || entry.id || `fallback-turn-${turnIndex}`;
+        const key = `${turnKey}:${userItemIndex}:user`;
+        return [{
+          key,
+          text: item.message || "（附件或空消息）",
+          target: mountedByKey.get(key) || null,
+          turnIndex,
+        }];
+      });
+    }
+
+    if (keyedUnits.length) {
+      return keyedUnits.map((target, turnIndex) => ({
+        key: target.getAttribute("data-content-search-unit-key") || `mounted-${turnIndex}`,
+        text: "",
+        target,
+        turnIndex,
+      }));
+    }
 
     return [...conversation.querySelectorAll("h4")]
       .filter((heading) => /^(你说：?|You said:?)$/i.test((heading.textContent || "").trim()))
-      .map((heading) => heading.nextElementSibling || heading);
+      .map((heading, turnIndex) => ({
+        key: `heading-${turnIndex}`,
+        text: "",
+        target: heading.nextElementSibling || heading,
+        turnIndex,
+      }));
   }
 
-  function messageText(target) {
-    const raw = (target.innerText || target.textContent || "")
+  function messageText(record) {
+    const raw = (record?.text || record?.target?.innerText || record?.target?.textContent || "")
       .replace(/\s+/g, " ")
       .trim();
     if (!raw) return "（附件或空消息）";
@@ -367,84 +256,51 @@
   }
 
   function hideTooltip() {
+    window.clearTimeout(tooltipHideTimer);
     if (tooltip) tooltip.dataset.open = "false";
+  }
+
+  function previewSelection(index) {
+    const button = list?.children[index];
+    const record = messageTargets[index];
+    if (!button || !record) return;
+    window.clearTimeout(tooltipHideTimer);
+    setTooltip(button, index, messageText(record));
+    tooltipHideTimer = window.setTimeout(hideTooltip, 900);
   }
 
   function handleNavigationWheel(event) {
     event.preventDefault();
     event.stopPropagation();
-    const maxScroll = Math.max(0, panelList.scrollHeight - panelList.clientHeight);
-    if (maxScroll > 1) {
-      panelList.scrollTop += event.deltaY;
-      syncPanelScrollbar();
-      return;
-    }
-
     const now = performance.now();
     if (now - lastWheelStepAt < 130 || Math.abs(event.deltaY) < 2) return;
     lastWheelStepAt = now;
     const direction = event.deltaY > 0 ? 1 : -1;
-    jumpTo(Math.max(0, Math.min(messageTargets.length - 1, activeIndex + direction)));
+    const base = selectedIndex >= 0 ? selectedIndex : activeIndex;
+    setSelectedVisual(
+      Math.max(0, Math.min(messageTargets.length - 1, base + direction)),
+      true
+    );
   }
 
-  function setScrollbarPosition(clientY, grabOffset) {
-    if (!panelScrollbar || !panelThumb || !messageTargets.length) return;
-    const trackRect = panelScrollbar.getBoundingClientRect();
-    const thumbHeight = panelThumb.offsetHeight;
-    const travel = Math.max(1, trackRect.height - thumbHeight);
-    const ratio = Math.max(0, Math.min(1,
-      (clientY - trackRect.top - grabOffset) / travel
-    ));
-    const maxScroll = Math.max(0, panelList.scrollHeight - panelList.clientHeight);
-    if (maxScroll > 1) {
-      panelList.scrollTop = ratio * maxScroll;
-    } else {
-      jumpTo(Math.round(ratio * Math.max(0, messageTargets.length - 1)));
+  function setSelectedVisual(next, showPreview = false) {
+    if (!messageTargets.length) return;
+    selectedIndex = Math.max(0, Math.min(messageTargets.length - 1, next));
+    [...list.children].forEach((button, index) => {
+      button.dataset.selected = String(index === selectedIndex);
+      if (index === selectedIndex) button.setAttribute("aria-selected", "true");
+      else button.removeAttribute("aria-selected");
+    });
+    const selectedButton = list.children[selectedIndex];
+    if (selectedButton) {
+      const top = selectedButton.offsetTop;
+      const bottom = top + selectedButton.offsetHeight;
+      if (top < list.scrollTop) list.scrollTop = Math.max(0, top - 8);
+      else if (bottom > list.scrollTop + list.clientHeight) {
+        list.scrollTop = bottom - list.clientHeight + 8;
+      }
     }
-    syncPanelScrollbar();
-  }
-
-  function startScrollbarDrag(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    const thumbRect = panelThumb.getBoundingClientRect();
-    const grabOffset = event.target === panelThumb
-      ? Math.max(0, Math.min(thumbRect.height, event.clientY - thumbRect.top))
-      : thumbRect.height / 2;
-    setScrollbarPosition(event.clientY, grabOffset);
-
-    const move = (moveEvent) => {
-      moveEvent.preventDefault();
-      setScrollbarPosition(moveEvent.clientY, grabOffset);
-    };
-    const stop = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", stop);
-      window.removeEventListener("pointercancel", stop);
-    };
-    window.addEventListener("pointermove", move, { passive: false });
-    window.addEventListener("pointerup", stop, { once: true });
-    window.addEventListener("pointercancel", stop, { once: true });
-  }
-
-  function syncPanelScrollbar() {
-    if (!panelScrollbar || !panelThumb || !panelList) return;
-    const trackHeight = panelScrollbar.clientHeight;
-    if (!trackHeight) return;
-    const maxScroll = Math.max(0, panelList.scrollHeight - panelList.clientHeight);
-    const hasOverflow = maxScroll > 1;
-    const thumbHeight = hasOverflow
-      ? Math.max(28, trackHeight * panelList.clientHeight / panelList.scrollHeight)
-      : Math.max(28, Math.min(48, trackHeight * 0.28));
-    const travel = Math.max(0, trackHeight - thumbHeight);
-    const ratio = hasOverflow
-      ? panelList.scrollTop / maxScroll
-      : activeIndex / Math.max(1, messageTargets.length - 1);
-    panelThumb.style.height = `${thumbHeight}px`;
-    panelThumb.style.transform = `translateY(${Math.max(0, Math.min(travel, ratio * travel))}px)`;
-    panelScrollbar.setAttribute("aria-valuemin", "1");
-    panelScrollbar.setAttribute("aria-valuemax", String(Math.max(1, messageTargets.length)));
-    panelScrollbar.setAttribute("aria-valuenow", String(Math.max(1, activeIndex + 1)));
+    if (showPreview) previewSelection(selectedIndex);
   }
 
   function setActiveVisual(next) {
@@ -454,12 +310,6 @@
       if (index === next) button.setAttribute("aria-current", "true");
       else button.removeAttribute("aria-current");
     });
-    [...panelList.children].forEach((button, index) => {
-      button.dataset.active = String(index === next);
-      if (index === next) button.setAttribute("aria-current", "true");
-      else button.removeAttribute("aria-current");
-    });
-
     const activeButton = list.children[next];
     if (activeButton) {
       const top = activeButton.offsetTop;
@@ -469,23 +319,18 @@
         list.scrollTop = bottom - list.clientHeight + 8;
       }
     }
-    const activePanelButton = panelList.children[next];
-    if (activePanelButton) {
-      const top = activePanelButton.offsetTop;
-      const bottom = top + activePanelButton.offsetHeight;
-      if (top < panelList.scrollTop) panelList.scrollTop = Math.max(0, top - 7);
-      else if (bottom > panelList.scrollTop + panelList.clientHeight) {
-        panelList.scrollTop = bottom - panelList.clientHeight + 7;
-      }
-    }
-    syncPanelScrollbar();
   }
 
-  function jumpTo(index) {
-    const target = messageTargets[index];
-    if (!target?.isConnected) return;
-    cancelLatestRestore();
-    setActiveVisual(index);
+  function resolveRecordTarget(record) {
+    if (record?.target?.isConnected) return record.target;
+    if (!record?.key) return null;
+    const escaped = window.CSS?.escape ? CSS.escape(record.key) : record.key.replace(/"/g, '\\"');
+    const target = document.querySelector(`[data-content-search-unit-key="${escaped}"]`);
+    if (target) record.target = target;
+    return target;
+  }
+
+  function centerTarget(target) {
     target.scrollIntoView({
       behavior: "auto",
       block: "center",
@@ -494,15 +339,44 @@
     window.setTimeout(() => updateActive(true), 420);
   }
 
+  function jumpTo(index) {
+    const record = messageTargets[index];
+    if (!record || !scrollContainer) return;
+    cancelLatestRestore();
+    hideTooltip();
+    setSelectedVisual(index);
+    setActiveVisual(index);
+    const mounted = resolveRecordTarget(record);
+    if (mounted) {
+      centerTarget(mounted);
+      return;
+    }
+
+    const maxScroll = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+    const fromLatest = (messageTargets.length - 1 - index) /
+      Math.max(1, messageTargets.length - 1);
+    scrollContainer.scrollTo({ top: -maxScroll * fromLatest, behavior: "auto" });
+
+    const deadline = performance.now() + 1800;
+    const findTarget = () => {
+      const target = resolveRecordTarget(record);
+      if (target) {
+        centerTarget(target);
+        return;
+      }
+      if (performance.now() < deadline) window.setTimeout(findTarget, 60);
+    };
+    window.setTimeout(findTarget, 40);
+  }
+
   function renderItems(nextBubbles) {
     messageTargets = nextBubbles;
     activeIndex = -1;
+    selectedIndex = -1;
     list.replaceChildren();
-    panelList.replaceChildren();
-    panelCount.textContent = `全部提问 · ${nextBubbles.length}`;
 
-    nextBubbles.forEach((bubble, index) => {
-      const text = messageText(bubble);
+    nextBubbles.forEach((record, index) => {
+      const text = messageText(record);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "cgpt-nav-item";
@@ -516,34 +390,19 @@
       button.addEventListener("mouseleave", hideTooltip);
       button.addEventListener("blur", hideTooltip);
       list.appendChild(button);
-
-      const panelButton = document.createElement("button");
-      panelButton.type = "button";
-      panelButton.className = "cgpt-nav-panel-item";
-      panelButton.dataset.index = String(index);
-      panelButton.setAttribute("role", "listitem");
-      panelButton.setAttribute("aria-label", `跳转到第 ${index + 1} 条提问：${text}`);
-      const number = document.createElement("span");
-      number.className = "cgpt-nav-panel-index";
-      number.textContent = String(index + 1);
-      const label = document.createElement("span");
-      label.className = "cgpt-nav-panel-text";
-      label.textContent = text;
-      panelButton.append(number, label);
-      panelButton.addEventListener("click", () => jumpTo(index));
-      panelList.appendChild(panelButton);
     });
-    requestAnimationFrame(syncPanelScrollbar);
   }
 
   function sameMessages(next) {
     return next.length === messageTargets.length &&
-      next.every((element, index) => element === messageTargets[index]);
+      next.every((record, index) => record.key === messageTargets[index]?.key &&
+        record.text === messageTargets[index]?.text);
   }
 
   function isConversationReplacement(next) {
     if (!messageTargets.length || !next.length) return true;
-    return !next.some((element) => messageTargets.includes(element));
+    const currentKeys = new Set(messageTargets.map((record) => record.key));
+    return !next.some((record) => currentKeys.has(record.key));
   }
 
   function cancelLatestRestore() {
@@ -558,7 +417,7 @@
     if (document.visibilityState === "hidden") return false;
     const conversation = getConversation();
     const currentScroll = getScrollContainer(conversation);
-    const currentTargets = conversation ? getUserMessageTargets(conversation) : [];
+    const currentTargets = conversation ? getMessageTargets(conversation) : [];
     if (!currentScroll || !currentTargets.length) return false;
 
     scrollContainer = currentScroll;
@@ -606,7 +465,9 @@
       let next = 0;
       let best = Number.POSITIVE_INFINITY;
 
-      messageTargets.forEach((target, index) => {
+      messageTargets.forEach((record, index) => {
+        const target = resolveRecordTarget(record);
+        if (!target) return;
         const rect = target.getBoundingClientRect();
         const distance = Math.abs(rect.top - guide);
         if (distance < best) {
@@ -655,8 +516,8 @@
     if (nextConversationKey) conversationKey = nextConversationKey;
     if (conversationKeyChanged || conversationKeyInitialized) scheduleLatestRestore();
     const nextBubbles = conversation
-      ? getUserMessageTargets(conversation)
-          .filter((target) => !target.closest(`#${ROOT_ID}`))
+      ? getMessageTargets(conversation)
+          .filter((record) => !record.target?.closest(`#${ROOT_ID}`))
       : [];
 
     if (!nextScroll || !nextBubbles.length) {
@@ -676,8 +537,10 @@
     const conversationReplaced = conversationKeyChanged ||
       (messagesChanged && isConversationReplacement(nextBubbles));
     if (messagesChanged) {
+      hideTooltip();
       renderItems(nextBubbles);
       setActiveVisual(nextBubbles.length - 1);
+      setSelectedVisual(nextBubbles.length - 1);
       if (conversationReplaced) scheduleLatestRestore();
     }
 
@@ -718,7 +581,7 @@
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     root?.remove();
     style.remove();
-    root = list = tooltip = panel = panelList = panelCount = panelScrollbar = panelThumb = null;
+    root = list = tooltip = null;
     messageTargets = [];
     delete window[INSTALL_KEY];
     delete window[API_KEY];
