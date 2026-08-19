@@ -2,6 +2,10 @@
 
 为 Codex Desktop 的 **ChatGPT 模式**补充类似 Codex 对话页的灰色消息导航条。
 
+## 演示
+
+![ChatGPT Message Navigator 演示](./assets/demo.png)
+
 ## 功能
 
 - 自动为当前长对话中的每条用户提问生成导航节点
