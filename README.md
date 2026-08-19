@@ -4,7 +4,9 @@
 
 ## 演示
 
-<img src="https://raw.githubusercontent.com/Takizzl/chatgpt-message-navigator/efd75e6/assets/demo.png" alt="ChatGPT Message Navigator 演示" width="50%">
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Takizzl/chatgpt-message-navigator/efd75e6/assets/demo.png" alt="ChatGPT Message Navigator 演示" width="50%">
+</p>
 
 ## 功能
 
