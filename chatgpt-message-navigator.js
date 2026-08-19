@@ -5,7 +5,7 @@
   const API_KEY = "__chatgptMessageNavigator";
   const ROOT_ID = "chatgpt-message-navigator";
   const STYLE_ID = "chatgpt-message-navigator-style";
-  const VERSION = "1.1.1";
+  const VERSION = "1.1.4";
 
   if (window[API_KEY]?.destroy) window[API_KEY].destroy();
 
@@ -18,10 +18,14 @@
   let panelScrollbar = null;
   let panelThumb = null;
   let lastWheelStepAt = 0;
+  let conversationKey = "";
   let scrollContainer = null;
   let messageTargets = [];
   let activeIndex = -1;
   let updateTimer = 0;
+  let restoreLatestTimer = 0;
+  let restoreLatestInterval = 0;
+  let pendingLatestRestore = false;
   let frame = 0;
 
   const style = document.createElement("style");
@@ -307,6 +311,17 @@
     return document.querySelector('[data-thread-find-target="conversation"]');
   }
 
+  function getConversationKey() {
+    const titleButton = [...document.querySelectorAll("button")].find((button) => {
+      const rect = button.getBoundingClientRect();
+      const text = (button.innerText || "").trim();
+      return rect.left > 275 && rect.top >= 18 && rect.top < 83 &&
+        rect.width > 50 && text && text.length < 160 &&
+        !button.getAttribute("aria-label");
+    });
+    return (titleButton?.innerText || "").trim();
+  }
+
   function getScrollContainer(conversation) {
     return conversation?.closest(".thread-scroll-container") ||
       conversation?.parentElement?.closest(".thread-scroll-container") ||
@@ -469,6 +484,7 @@
   function jumpTo(index) {
     const target = messageTargets[index];
     if (!target?.isConnected) return;
+    cancelLatestRestore();
     setActiveVisual(index);
     target.scrollIntoView({
       behavior: "auto",
@@ -525,6 +541,52 @@
       next.every((element, index) => element === messageTargets[index]);
   }
 
+  function isConversationReplacement(next) {
+    if (!messageTargets.length || !next.length) return true;
+    return !next.some((element) => messageTargets.includes(element));
+  }
+
+  function cancelLatestRestore() {
+    clearTimeout(restoreLatestTimer);
+    clearInterval(restoreLatestInterval);
+    restoreLatestTimer = 0;
+    restoreLatestInterval = 0;
+    pendingLatestRestore = false;
+  }
+
+  function guardLatestPosition() {
+    if (document.visibilityState === "hidden") return false;
+    const conversation = getConversation();
+    const currentScroll = getScrollContainer(conversation);
+    const currentTargets = conversation ? getUserMessageTargets(conversation) : [];
+    if (!currentScroll || !currentTargets.length) return false;
+
+    scrollContainer = currentScroll;
+    setActiveVisual(currentTargets.length - 1);
+    if (Math.abs(currentScroll.scrollTop) > 1) {
+      currentScroll.scrollTo({ top: 0, behavior: "auto" });
+    }
+    return true;
+  }
+
+  function scheduleLatestRestore(delay = 140) {
+    cancelLatestRestore();
+    pendingLatestRestore = true;
+    restoreLatestTimer = window.setTimeout(() => {
+      const deadline = performance.now() + 15000;
+      const tick = () => {
+        guardLatestPosition();
+        if (performance.now() < deadline || document.visibilityState === "hidden") return;
+        clearInterval(restoreLatestInterval);
+        restoreLatestInterval = 0;
+        pendingLatestRestore = false;
+        updateActive(true);
+      };
+      tick();
+      restoreLatestInterval = window.setInterval(tick, 120);
+    }, delay);
+  }
+
   function positionRoot() {
     if (!root || root.hidden || !scrollContainer) return;
     const rect = scrollContainer.getBoundingClientRect();
@@ -536,8 +598,10 @@
   function updateActive(force = false) {
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => {
-      if (root?.hidden || !scrollContainer || !messageTargets.length) return;
+      if (root?.hidden || !scrollContainer || !messageTargets.length ||
+          document.visibilityState === "hidden" || pendingLatestRestore) return;
       const viewport = scrollContainer.getBoundingClientRect();
+      if (viewport.height < 100 || viewport.width < 100) return;
       const guide = viewport.top + Math.min(viewport.height * 0.38, 360);
       let next = 0;
       let best = Number.POSITIVE_INFINITY;
@@ -558,7 +622,14 @@
 
   function detachScroll() {
     scrollContainer?.removeEventListener("scroll", updateActive);
+    scrollContainer?.removeEventListener("wheel", handleConversationUserIntent);
+    scrollContainer?.removeEventListener("pointerdown", handleConversationUserIntent);
+    scrollContainer?.removeEventListener("touchstart", handleConversationUserIntent);
     scrollContainer = null;
+  }
+
+  function handleConversationUserIntent() {
+    if (pendingLatestRestore) cancelLatestRestore();
   }
 
   function refresh() {
@@ -568,11 +639,21 @@
       hideTooltip();
       detachScroll();
       messageTargets = [];
+      conversationKey = "";
       return;
     }
 
+    if (document.visibilityState === "hidden") return;
+
     const conversation = getConversation();
     const nextScroll = getScrollContainer(conversation);
+    const nextConversationKey = getConversationKey();
+    const conversationKeyChanged = Boolean(
+      nextConversationKey && conversationKey && nextConversationKey !== conversationKey
+    );
+    const conversationKeyInitialized = Boolean(nextConversationKey && !conversationKey);
+    if (nextConversationKey) conversationKey = nextConversationKey;
+    if (conversationKeyChanged || conversationKeyInitialized) scheduleLatestRestore();
     const nextBubbles = conversation
       ? getUserMessageTargets(conversation)
           .filter((target) => !target.closest(`#${ROOT_ID}`))
@@ -587,12 +668,22 @@
       detachScroll();
       scrollContainer = nextScroll;
       scrollContainer.addEventListener("scroll", updateActive, { passive: true });
+      scrollContainer.addEventListener("wheel", handleConversationUserIntent, { passive: true });
+      scrollContainer.addEventListener("pointerdown", handleConversationUserIntent, { passive: true });
+      scrollContainer.addEventListener("touchstart", handleConversationUserIntent, { passive: true });
     }
-    if (!sameMessages(nextBubbles)) renderItems(nextBubbles);
+    const messagesChanged = !sameMessages(nextBubbles);
+    const conversationReplaced = conversationKeyChanged ||
+      (messagesChanged && isConversationReplacement(nextBubbles));
+    if (messagesChanged) {
+      renderItems(nextBubbles);
+      setActiveVisual(nextBubbles.length - 1);
+      if (conversationReplaced) scheduleLatestRestore();
+    }
 
     root.hidden = false;
     positionRoot();
-    updateActive(true);
+    if (!pendingLatestRestore) updateActive(true);
   }
 
   function scheduleRefresh(delay = 120) {
@@ -608,14 +699,23 @@
 
   const interval = window.setInterval(() => scheduleRefresh(0), 1200);
   window.addEventListener("resize", positionRoot);
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === "visible") {
+      if (pendingLatestRestore) scheduleLatestRestore(180);
+      else scheduleRefresh(180);
+    }
+  };
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 
   function destroy() {
     clearTimeout(updateTimer);
+    cancelLatestRestore();
     clearInterval(interval);
     cancelAnimationFrame(frame);
     observer.disconnect();
     detachScroll();
     window.removeEventListener("resize", positionRoot);
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
     root?.remove();
     style.remove();
     root = list = tooltip = panel = panelList = panelCount = panelScrollbar = panelThumb = null;
